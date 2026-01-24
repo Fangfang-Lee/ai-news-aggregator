@@ -1,0 +1,71 @@
+# AI News Aggregator - Render 部署配置
+
+services:
+  # 后端服务
+  - type: web
+    name: ai-news-backend
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    plan: free
+    region: oregon
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    numInstances: 1
+    envVars:
+      - key: DATABASE_URL
+        value: postgresql://postgres:password@db:5432/ai_news_db
+        type: secret
+        generateValue: true
+      - key: REDIS_URL
+        value: redis://redis:6379/0
+        type: secret
+        generateValue: true
+      - key: DEEPSEEK_API_KEY
+        value: ${DEEPSEEK_API_KEY}
+        type: secret
+        sync: false
+      - key: CELERY_BROKER_URL
+        value: redis://redis:6379/1
+        type: secret
+        generateValue: true
+      - key: CELERY_RESULT_BACKEND
+        value: redis://redis:6379/2
+        type: secret
+        generateValue: true
+
+  # Celery Worker
+  - type: worker
+    name: ai-news-celery-worker
+    env: docker
+    dockerfilePath: ./backend/Dockerfile
+    plan: free
+    region: oregon
+    branch: main
+    numInstances: 1
+    envVars:
+      - key: DATABASE_URL
+        fromService:
+          name: ai-news-backend
+          type: secret
+          key: DATABASE_URL
+      - key: REDIS_URL
+        fromService:
+          name: ai-news-backend
+          type: secret
+          key: REDIS_URL
+      - key: DEEPSEEK_API_KEY
+        value: ${DEEPSEEK_API_KEY}
+        type: secret
+        sync: false
+      - key: CELERY_BROKER_URL
+        fromService:
+          name: ai-news-backend
+          type: secret
+          key: CELERY_BROKER_URL
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          name: ai-news-backend
+          type: secret
+          key: CELERY_RESULT_BACKEND
+    buildCommand: pip install -r requirements.txt
+    startCommand: celery -A app.celery_app worker --loglevel=info
