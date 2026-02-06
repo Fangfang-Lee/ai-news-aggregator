@@ -4,6 +4,9 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "postgresql://postgres:password@localhost:5432/ai_news_db"
+    # Supabase hosted Postgres typically requires SSL.
+    # For Supabase, set DATABASE_SSLMODE=require (or include ?sslmode=require in DATABASE_URL).
+    DATABASE_SSLMODE: str = "prefer"
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"
@@ -19,7 +22,7 @@ class Settings(BaseSettings):
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
 
     # RSS Crawler
-    RSS_FETCH_INTERVAL: int = 300  # 5 minutes
+    RSS_FETCH_INTERVAL: int = 3600  # 60 minutes
     MAX_WORKERS: int = 5
 
     # DeepSeek API

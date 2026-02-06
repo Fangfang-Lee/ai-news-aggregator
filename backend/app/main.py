@@ -40,16 +40,25 @@ rss_models.Base.metadata.create_all(bind=engine)
 app.include_router(api_router, prefix="/api")
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="frontend/static"), name="static")
+import os
+static_dir = os.path.join(os.path.dirname(__file__), "../../frontend/static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Setup templates
-templates = Jinja2Templates(directory="frontend/templates")
+templates_dir = os.path.join(os.path.dirname(__file__), "../../frontend/templates")
+if os.path.exists(templates_dir):
+    templates = Jinja2Templates(directory=templates_dir)
+else:
+    templates = None
 
 
 @app.get("/")
 async def home(request: Request):
     """Home page"""
-    return templates.TemplateResponse("index.html", {"request": request})
+    if templates:
+        return templates.TemplateResponse("index.html", {"request": request})
+    return {"message": "AI News Aggregator API", "docs": "/api/docs"}
 
 
 @app.get("/health")

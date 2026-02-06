@@ -70,6 +70,21 @@ docker-compose up -d
    - API Documentation: http://localhost:8000/api/docs
    - Interactive API: http://localhost:8000/api/redoc
 
+### Using Supabase (Hosted Postgres)
+
+If you want to use Supabase as the database (recommended for production), set `DATABASE_URL` to the Supabase connection string (Supabase Dashboard -> Settings -> Database).
+
+Notes:
+- Supabase Postgres typically requires SSL. Either append `?sslmode=require` to `DATABASE_URL` or set `DATABASE_SSLMODE=require`.
+- This project uses SQLAlchemy and will create tables automatically on startup (`Base.metadata.create_all`).
+
+Example:
+
+```bash
+export DATABASE_URL="postgresql://postgres:<PASSWORD>@db.<PROJECT_REF>.supabase.co:5432/postgres?sslmode=require"
+export DATABASE_SSLMODE="require"
+```
+
 ### Manual Installation
 
 1. Install PostgreSQL and Redis
@@ -85,6 +100,7 @@ pip install -r requirements.txt
 3. Set up environment variables:
 ```bash
 export DATABASE_URL="postgresql://postgres:password@localhost:5432/ai_news_db"
+export DATABASE_SSLMODE="prefer"
 export REDIS_URL="redis://localhost:6379/0"
 ```
 
@@ -104,7 +120,7 @@ uvicorn app.main:app --reload
 
 ### Fetching Content
 
-- Content is automatically fetched every 5 minutes via Celery
+- Content is automatically fetched every 60 minutes via Celery
 - Click the refresh button to manually trigger fetching
 
 ### Managing Content

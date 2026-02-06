@@ -13,9 +13,12 @@ services:
     numInstances: 1
     envVars:
       - key: DATABASE_URL
-        value: postgresql://postgres:password@db:5432/ai_news_db
+        # Use your Supabase Postgres connection string here (Settings -> Database -> Connection string).
+        # Example:
+        # postgresql://postgres:<PASSWORD>@db.<PROJECT_REF>.supabase.co:5432/postgres?sslmode=require
+        value: postgresql://postgres:<PASSWORD>@db.<PROJECT_REF>.supabase.co:5432/postgres?sslmode=require
         type: secret
-        generateValue: true
+        sync: false
       - key: REDIS_URL
         value: redis://redis:6379/0
         type: secret

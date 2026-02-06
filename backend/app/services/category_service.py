@@ -69,11 +69,11 @@ class CategoryService:
     async def initialize_default_categories(self):
         """Initialize default categories"""
         default_categories = [
-            {"name": "AI", "description": "Artificial Intelligence news", "color": "#6366f1"},
-            {"name": "Technology", "description": "Technology news and updates", "color": "#3b82f6"},
-            {"name": "Business", "description": "Business and startup news", "color": "#10b981"},
-            {"name": "Science", "description": "Scientific discoveries and research", "color": "#8b5cf6"},
-            {"name": "Internet", "description": "Internet and social media news", "color": "#f59e0b"},
+            {"name": "人工智能", "description": "AI 技术、大模型与应用", "color": "#6366f1"},
+            {"name": "科技前沿", "description": "前沿科技资讯与硬件", "color": "#3b82f6"},
+            {"name": "商业财经", "description": "科技创投与商业动态", "color": "#10b981"},
+            {"name": "科学探索", "description": "基础科学发现与研究", "color": "#8b5cf6"},
+            {"name": "互联网", "description": "互联网产品与行业动态", "color": "#f59e0b"},
         ]
 
         for cat_data in default_categories:

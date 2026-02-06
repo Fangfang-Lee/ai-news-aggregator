@@ -25,9 +25,9 @@ celery_app.conf.update(
 
 # Configure beat scheduler
 celery_app.conf.beat_schedule = {
-    'fetch-rss-feeds-every-5-minutes': {
+    'fetch-rss-feeds-every-60-minutes': {
         'task': 'app.tasks.fetch_all_sources',
-        'schedule': 300.0,  # 5 minutes
+        'schedule': 3600.0,  # 60 minutes
     },
     'cleanup-old-content-daily': {
         'task': 'app.tasks.cleanup_old_content',

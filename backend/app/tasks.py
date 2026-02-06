@@ -1,6 +1,7 @@
 from celery import Task
 from sqlalchemy.orm import Session
 import logging
+import asyncio
 
 from app.celery_app import celery_app
 from app.core.database import SessionLocal
@@ -8,6 +9,10 @@ from app.services.rss_service import RSSService
 from app.services.content_service import ContentService
 
 logger = logging.getLogger(__name__)
+
+def _run_async(coro):
+    """Run an async coroutine from a sync Celery task."""
+    return asyncio.run(coro)
 
 
 class DatabaseTask(Task):
@@ -47,7 +52,7 @@ def fetch_all_sources(self):
 
         for source in active_sources:
             try:
-                success = await rss_service.fetch_source_content(source.id)
+                success = _run_async(rss_service.fetch_source_content(source.id))
                 if success:
                     total_fetched += 1
                     logger.info(f"Fetched content from {source.name}")
@@ -74,7 +79,7 @@ def fetch_source(self, source_id: int):
         logger.info(f"Fetching content from source ID: {source_id}")
 
         rss_service = RSSService(self.db)
-        success = await rss_service.fetch_source_content(source_id)
+        success = _run_async(rss_service.fetch_source_content(source_id))
 
         if success:
             logger.info(f"Successfully fetched content from source ID: {source_id}")
@@ -128,41 +133,53 @@ def initialize_default_data(self):
 
         # Initialize default categories
         category_service = CategoryService(self.db)
-        await category_service.initialize_default_categories()
+        _run_async(category_service.initialize_default_categories())
         logger.info("Initialized default categories")
 
         # Add sample RSS sources
         rss_service = RSSService(self.db)
 
-        # Sample AI/Tech RSS sources
+        # Sample AI/Tech RSS sources (Chinese Context)
         sample_sources = [
             {
-                'name': 'OpenAI Blog',
-                'url': 'https://openai.com/blog/rss.xml',
-                'description': 'Official OpenAI blog posts',
+                'name': '机器之心',
+                'url': 'https://www.jiqizhixin.com/rss',
+                'description': '国内领先的人工智能专业媒体',
                 'category_id': None  # Will be assigned to AI category
             },
             {
-                'name': 'TechCrunch AI',
-                'url': 'https://techcrunch.com/category/artificial-intelligence/feed/',
-                'description': 'AI news from TechCrunch',
+                'name': '36氪 - AI',
+                'url': 'https://36kr.com/feed/tags/ai',
+                'description': '36氪人工智能板块',
                 'category_id': None
             },
             {
-                'name': 'MIT Technology Review',
-                'url': 'https://www.technologyreview.com/feed/',
-                'description': 'MIT Technology Review articles',
+                'name': 'InfoQ - AI',
+                'url': 'https://www.infoq.cn/feed/topic/106',
+                'description': 'InfoQ 中国 AI 频道',
+                'category_id': None
+            },
+            {
+                'name': '少数派',
+                'url': 'https://sspai.com/feed',
+                'description': '高效工作生活与数字产品',
                 'category_id': None
             }
         ]
 
         # Get AI category
-        ai_category = await category_service.get_category_by_name('AI')
+        ai_category = _run_async(category_service.get_category_by_name('人工智能'))
 
         for source_data in sample_sources:
             try:
-                source_data['category_id'] = ai_category.id if ai_category else None
-                await rss_service.create_source(RSSSourceCreate(**source_data))
+                # Assign categories based on source name
+                if '机器之心' in source_data['name'] or '36氪' in source_data['name'] or 'InfoQ' in source_data['name']:
+                    source_data['category_id'] = ai_category.id if ai_category else None
+                else:
+                    tech_cat = _run_async(category_service.get_category_by_name('科技前沿'))
+                    source_data['category_id'] = tech_cat.id if tech_cat else None
+
+                _run_async(rss_service.create_source(RSSSourceCreate(**source_data)))
                 logger.info(f"Added RSS source: {source_data['name']}")
             except ValueError as e:
                 logger.warning(f"Could not add {source_data['name']}: {e}")

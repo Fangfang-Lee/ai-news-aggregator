@@ -21,9 +21,12 @@ class NewsAggregator {
     }
 
     async init() {
+        console.log('NewsAggregator initializing...');
         this.bindEvents();
         await this.loadFilters();
+        console.log('Filters loaded, loading articles...');
         await this.loadArticles();
+        console.log('Articles loaded');
     }
 
     bindEvents() {
@@ -163,8 +166,12 @@ class NewsAggregator {
                 params.append('is_bookmarked', 'true');
             }
 
-            const response = await fetch(`${API_BASE}/content/?${params}`);
+            const url = `${API_BASE}/content/?${params}`;
+            console.log('Fetching articles from:', url);
+            const response = await fetch(url);
+            console.log('Response status:', response.status);
             const data = await response.json();
+            console.log('Received data:', data.total, 'articles');
 
             this.totalPages = Math.ceil(data.total / this.pageSize);
             this.renderArticles(data.items);
@@ -180,18 +187,37 @@ class NewsAggregator {
     renderArticles(articles) {
         const list = document.getElementById('articlesList');
         const emptyState = document.getElementById('emptyState');
+        const pagination = document.getElementById('pagination');
+
+        // 确保列表可见
+        list.classList.remove('hidden');
 
         if (!articles || articles.length === 0) {
             list.innerHTML = '';
             emptyState.classList.remove('hidden');
-            document.getElementById('pagination').classList.add('hidden');
+            pagination.classList.add('hidden');
             return;
         }
 
+        // 有文章时，隐藏 empty-state，显示分页
         emptyState.classList.add('hidden');
-        document.getElementById('pagination').classList.remove('hidden');
+        pagination.classList.remove('hidden');
 
-        list.innerHTML = articles.map(article => this.createArticleCard(article)).join('');
+        // 按日期分组
+        const groupedArticles = this.groupArticlesByDate(articles);
+        
+        // 渲染分组后的文章
+        list.innerHTML = Object.keys(groupedArticles).map(dateKey => {
+            const dateGroup = groupedArticles[dateKey];
+            return `
+                <div class="date-group">
+                    <h2 class="date-group-title">${dateGroup.title}</h2>
+                    <div class="date-group-articles">
+                        ${dateGroup.articles.map(article => this.createArticleCard(article)).join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
 
         // 绑定文章卡片事件
         list.querySelectorAll('.article-card').forEach(card => {
@@ -222,10 +248,85 @@ class NewsAggregator {
         });
     }
 
+    groupArticlesByDate(articles) {
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+
+        const groups = {};
+
+        articles.forEach(article => {
+            if (!article.published_date) {
+                // 没有日期的文章归到"更早"
+                const key = 'earlier';
+                if (!groups[key]) {
+                    groups[key] = { title: '更早', articles: [] };
+                }
+                groups[key].articles.push(article);
+                return;
+            }
+
+            const articleDate = new Date(article.published_date);
+            const articleDateOnly = new Date(articleDate.getFullYear(), articleDate.getMonth(), articleDate.getDate());
+
+            let dateKey, dateTitle;
+
+            if (articleDateOnly.getTime() === today.getTime()) {
+                dateKey = 'today';
+                dateTitle = '今天';
+            } else if (articleDateOnly.getTime() === yesterday.getTime()) {
+                dateKey = 'yesterday';
+                dateTitle = '昨天';
+            } else {
+                // 更早的日期，显示具体日期
+                dateKey = articleDateOnly.toISOString().split('T')[0];
+                dateTitle = this.formatDateGroup(articleDateOnly);
+            }
+
+            if (!groups[dateKey]) {
+                groups[dateKey] = { title: dateTitle, articles: [] };
+            }
+            groups[dateKey].articles.push(article);
+        });
+
+        // 按日期排序：今天 > 昨天 > 更早（按日期倒序）
+        const sortedKeys = Object.keys(groups).sort((a, b) => {
+            if (a === 'today') return -1;
+            if (b === 'today') return 1;
+            if (a === 'yesterday') return -1;
+            if (b === 'yesterday') return 1;
+            if (a === 'earlier') return 1;
+            if (b === 'earlier') return -1;
+            return b.localeCompare(a); // 日期倒序
+        });
+
+        const sortedGroups = {};
+        sortedKeys.forEach(key => {
+            sortedGroups[key] = groups[key];
+        });
+
+        return sortedGroups;
+    }
+
+    formatDateGroup(date) {
+        const now = new Date();
+        const year = date.getFullYear();
+        const month = date.getMonth() + 1;
+        const day = date.getDate();
+
+        // 如果是今年，不显示年份
+        if (year === now.getFullYear()) {
+            return `${month}月${day}日`;
+        } else {
+            return `${year}年${month}月${day}日`;
+        }
+    }
+
     createArticleCard(article) {
         const category = this.categories.find(c => c.id === article.categories[0]?.id);
         const source = this.sources.find(s => s.id === article.rss_source_id);
-        const date = this.formatDate(article.published_date);
+        const time = this.formatTime(article.published_date);
 
         return `
             <article class="article-card ${!article.is_read ? 'unread' : ''} ${article.is_bookmarked ? 'bookmarked' : ''}" data-id="${article.id}">
@@ -233,7 +334,7 @@ class NewsAggregator {
                     <div class="article-meta">
                         ${source ? `<span class="article-source">${source.name}</span>` : ''}
                         ${category ? `<span class="article-category" style="background-color: ${category.color}">${category.name}</span>` : ''}
-                        <span class="article-date">${date}</span>
+                        ${time ? `<span class="article-time">${time}</span>` : ''}
                     </div>
                     <div class="article-actions">
                         <button class="icon-btn btn-read ${article.is_read ? 'active' : ''}" title="${article.is_read ? '标记为未读' : '标记为已读'}">
@@ -255,6 +356,14 @@ class NewsAggregator {
                 </div>
             </article>
         `;
+    }
+
+    formatTime(dateStr) {
+        if (!dateStr) return null;
+        const date = new Date(dateStr);
+        const hours = date.getHours().toString().padStart(2, '0');
+        const minutes = date.getMinutes().toString().padStart(2, '0');
+        return `${hours}:${minutes}`;
     }
 
     openArticle(article) {
@@ -310,7 +419,7 @@ class NewsAggregator {
         this.openModal('articleModal');
     }
 
-    toggleReadStatus(articleId, isRead) {
+    async toggleReadStatus(articleId, isRead) {
         const endpoint = isRead ? '/mark-unread' : '/mark-read';
         try {
             await fetch(`${API_BASE}/content/${articleId}${endpoint}`, { method: 'POST' });
@@ -320,7 +429,7 @@ class NewsAggregator {
         }
     }
 
-    toggleBookmark(articleId) {
+    async toggleBookmark(articleId) {
         try {
             await fetch(`${API_BASE}/content/${articleId}/bookmark`, { method: 'POST' });
             await this.loadArticles(); // 刷新 UI
@@ -344,7 +453,7 @@ class NewsAggregator {
         btn.disabled = false;
     }
 
-    addSource() {
+    async addSource() {
         const form = document.getElementById('addSourceForm');
         const formData = new FormData(form);
 
@@ -397,7 +506,10 @@ class NewsAggregator {
     showLoading(show) {
         document.getElementById('loading').classList.toggle('hidden', !show);
         document.getElementById('articlesList').classList.toggle('hidden', show);
-        document.getElementById('emptyState').classList.toggle('hidden', show);
+        // 加载时隐藏 empty-state，让 renderArticles 来控制显示
+        if (show) {
+            document.getElementById('emptyState').classList.add('hidden');
+        }
     }
 
     showError(message) {
@@ -445,5 +557,11 @@ function debounce(func, wait) {
 
 // DOM 加载完成后初始化应用
 document.addEventListener('DOMContentLoaded', () => {
-    window.app = new NewsAggregator();
+    console.log('DOM loaded, creating NewsAggregator instance...');
+    try {
+        window.app = new NewsAggregator();
+        console.log('NewsAggregator instance created');
+    } catch (error) {
+        console.error('Failed to initialize NewsAggregator:', error);
+    }
 });
