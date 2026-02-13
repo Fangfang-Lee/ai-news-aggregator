@@ -21,7 +21,7 @@ class ContentService:
         self.parser = ContentParser()
         self.summary_service = SummaryService() if settings.DEEPSEEK_API_KEY else None
 
-    async def get_content(
+    def get_content(
         self,
         category_id: Optional[int] = None,
         source_id: Optional[int] = None,
@@ -74,11 +74,11 @@ class ContentService:
             page_size=page_size
         )
 
-    async def get_content_by_id(self, content_id: int) -> Optional[Content]:
+    def get_content_by_id(self, content_id: int) -> Optional[Content]:
         """Get content by ID"""
         return self.db.query(Content).filter(Content.id == content_id).first()
 
-    async def create_or_update_content(self, entry_data: dict, source_id: int) -> bool:
+    def create_or_update_content(self, entry_data: dict, source_id: int) -> bool:
         """
         Create or update content based on GUID
 
@@ -96,27 +96,62 @@ class ContentService:
             self.db.commit()
             return False
 
-        # Get text for summarization (prefer content_text, fall back to summary)
-        text_to_summarize = (
-            entry_data.get('content_text') or
-            entry_data.get('summary') or
-            entry_data.get('title', '')
+        # Date cutoff — skip articles published before the configured minimum date
+        published_date = entry_data.get('published_date')
+        if published_date and settings.CONTENT_MIN_DATE:
+            min_date = datetime.strptime(settings.CONTENT_MIN_DATE, "%Y-%m-%d")
+            if published_date < min_date:
+                logger.debug(f"Skipped old article (before {settings.CONTENT_MIN_DATE}): "
+                             f"{entry_data.get('title', '')[:60]}")
+                return False
+
+        title = self.parser.clean_text(entry_data.get('title', ''))[:512]
+        raw_summary = entry_data.get('summary')
+        cleaned_summary = self.parser.clean_text(raw_summary)[:2000] if raw_summary else None
+        content_text = self.parser.clean_text(entry_data.get('content_text'))
+
+        # Relevance filtering
+        # Step 1: Blacklist — always filter out pure financial/stock noise
+        if self.parser.is_financial_noise(title):
+            logger.debug(f"Filtered financial noise: {title[:60]}")
+            return False
+
+        # Step 2: Keyword relevance check
+        matched_category = self.parser.categorize_article(
+            title, content_text or cleaned_summary or ''
         )
+        category_id = entry_data.get('category_id')
+
+        if category_id:
+            # Source has preset category — check if it's a broad source
+            BROAD_CATEGORIES = {'Internet', 'Technology', 'Startup & Product'}
+            source_cat = self.db.query(Category).filter(Category.id == category_id).first()
+            if source_cat and source_cat.name in BROAD_CATEGORIES and not matched_category:
+                # Broad source + no keyword match → skip
+                logger.debug(f"Skipped irrelevant from broad source: {title[:60]}")
+                return False
+        elif not matched_category:
+            # No preset category + no keyword match → skip
+            logger.debug(f"Skipped irrelevant article: {title[:60]}")
+            return False
+
+        # Get text for summarization (prefer content_text, fall back to summary)
+        text_to_summarize = content_text or cleaned_summary or title
 
         # Generate AI summary if service is available
         ai_summary = None
         if self.summary_service and text_to_summarize:
             max_length = self.summary_service.get_dynamic_length(text_to_summarize)
-            ai_summary = await self.summary_service.generate_summary(text_to_summarize, max_length)
+            ai_summary = self.summary_service.generate_summary(text_to_summarize, max_length)
             if ai_summary:
-                logger.info(f"Generated AI summary for article: {entry_data.get('title', 'Unknown')[:50]}")
+                logger.info(f"Generated AI summary for article: {title[:50]}")
 
         # Create new content
         db_content = Content(
-            title=self.parser.clean_text(entry_data.get('title', ''))[:512],
-            summary=ai_summary or self.parser.clean_text(entry_data.get('summary'))[:2000] if entry_data.get('summary') else None,
+            title=title,
+            summary=ai_summary or cleaned_summary,
             content_html=entry_data.get('content_html'),
-            content_text=self.parser.clean_text(entry_data.get('content_text')),
+            content_text=content_text,
             link=entry_data.get('link'),
             image_url=entry_data.get('image_url'),
             author=entry_data.get('author'),
@@ -130,19 +165,22 @@ class ContentService:
         self.db.commit()
         self.db.refresh(db_content)
 
-        # Add category if provided
-        category_id = entry_data.get('category_id')
+        # Assign category: use source's preset category, or auto-detected category
         if category_id:
             category = self.db.query(Category).filter(Category.id == category_id).first()
             if category:
                 db_content.categories.append(category)
-                self.db.commit()
+        elif matched_category:
+            category = self.db.query(Category).filter(Category.name == matched_category).first()
+            if category:
+                db_content.categories.append(category)
 
+        self.db.commit()
         return True
 
-    async def mark_as_read(self, content_id: int) -> bool:
+    def mark_as_read(self, content_id: int) -> bool:
         """Mark content as read"""
-        content = await self.get_content_by_id(content_id)
+        content = self.get_content_by_id(content_id)
         if not content:
             return False
 
@@ -156,9 +194,9 @@ class ContentService:
 
         return True
 
-    async def mark_as_unread(self, content_id: int) -> bool:
+    def mark_as_unread(self, content_id: int) -> bool:
         """Mark content as unread"""
-        content = await self.get_content_by_id(content_id)
+        content = self.get_content_by_id(content_id)
         if not content:
             return False
 
@@ -166,14 +204,14 @@ class ContentService:
         self.db.commit()
         return True
 
-    async def toggle_bookmark(self, content_id: int) -> Optional[bool]:
+    def toggle_bookmark(self, content_id: int) -> Optional[bool]:
         """
         Toggle bookmark status
 
         Returns:
             New bookmark status or None if content not found
         """
-        content = await self.get_content_by_id(content_id)
+        content = self.get_content_by_id(content_id)
         if not content:
             return None
 
@@ -181,25 +219,7 @@ class ContentService:
         self.db.commit()
         return content.is_bookmarked
 
-    async def fetch_all_active_sources(self) -> int:
-        """Fetch content from all active RSS sources"""
-        from app.services.rss_service import RSSService
-        from app.models.rss_models import RSSSource
-
-        active_sources = self.db.query(RSSSource.id).filter(RSSSource.is_active == True).all()
-        rss_service = RSSService(self.db)
-
-        count = 0
-        for (source_id,) in active_sources:
-            try:
-                await rss_service.fetch_source_content(source_id)
-                count += 1
-            except Exception as e:
-                logger.error(f"Error fetching from source {source_id}: {e}")
-
-        return count
-
-    async def get_reading_history(self, limit: int = 50) -> List[ReadingHistory]:
+    def get_reading_history(self, limit: int = 50) -> List[ReadingHistory]:
         """Get reading history"""
         return self.db.query(ReadingHistory).order_by(
             ReadingHistory.read_at.desc()

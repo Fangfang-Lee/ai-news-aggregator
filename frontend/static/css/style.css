@@ -137,7 +137,7 @@ body {
     flex-wrap: wrap;
     gap: 1rem;
     align-items: center;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
 }
 
 .search-box {
@@ -197,6 +197,67 @@ body {
     border-color: var(--primary);
 }
 
+/* Status Tabs */
+.status-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0;
+}
+
+.status-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.625rem 1rem;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.status-tab svg {
+    width: 16px;
+    height: 16px;
+}
+
+.status-tab:hover {
+    color: var(--text-primary);
+    background: var(--background);
+    border-radius: 0.5rem 0.5rem 0 0;
+}
+
+.status-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+.tab-count {
+    font-size: 0.75rem;
+    background: var(--background);
+    color: var(--text-secondary);
+    padding: 0.125rem 0.5rem;
+    border-radius: 1rem;
+    min-width: 1.25rem;
+    text-align: center;
+}
+
+.tab-count:empty {
+    display: none;
+}
+
+.status-tab.active .tab-count {
+    background: var(--primary);
+    color: white;
+}
+
 /* Articles List */
 .articles-list {
     display: flex;
@@ -222,16 +283,8 @@ body {
     border-left: 3px solid var(--primary);
 }
 
-.article-card.bookmarked::after {
-    content: '';
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    width: 20px;
-    height: 20px;
-    background: var(--warning);
-    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 24 24'%3E%3Cpath d='M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z'/%3E%3C/svg%3E") no-repeat;
-    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='currentColor' viewBox='0 0 24 24'%3E%3Cpath d='M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z'/%3E%3C/svg%3E") no-repeat;
+.article-card.bookmarked {
+    border-right: 3px solid var(--warning);
 }
 
 .article-header {
@@ -580,6 +633,16 @@ body {
 
     .article-header {
         flex-direction: column;
+    }
+
+    .status-tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .status-tab {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.8125rem;
     }
 
     .pagination {

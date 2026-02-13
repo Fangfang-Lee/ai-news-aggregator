@@ -5,7 +5,6 @@ import logging
 from app.celery_app import celery_app
 from app.core.database import SessionLocal
 from app.services.rss_service import RSSService
-from app.services.content_service import ContentService
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +33,6 @@ def fetch_all_sources(self):
         logger.info("Starting to fetch content from all RSS sources")
 
         rss_service = RSSService(self.db)
-        content_service = ContentService(self.db)
 
         # Get all active sources
         from app.models.rss_models import RSSSource
@@ -43,23 +41,22 @@ def fetch_all_sources(self):
         ).all()
 
         total_fetched = 0
-        total_new = 0
 
         for source in active_sources:
             try:
-                success = await rss_service.fetch_source_content(source.id)
+                success = rss_service.fetch_source_content(source.id)
                 if success:
                     total_fetched += 1
                     logger.info(f"Fetched content from {source.name}")
             except Exception as e:
                 logger.error(f"Error fetching from {source.name}: {e}")
 
-        logger.info(f"Completed fetching. Sources: {total_fetched}, Total new articles: {total_new}")
+        logger.info(f"Completed fetching. Sources processed: {total_fetched}/{len(active_sources)}")
 
         return {
             'status': 'success',
             'sources_fetched': total_fetched,
-            'new_articles': total_new
+            'total_sources': len(active_sources)
         }
 
     except Exception as e:
@@ -74,7 +71,7 @@ def fetch_source(self, source_id: int):
         logger.info(f"Fetching content from source ID: {source_id}")
 
         rss_service = RSSService(self.db)
-        success = await rss_service.fetch_source_content(source_id)
+        success = rss_service.fetch_source_content(source_id)
 
         if success:
             logger.info(f"Successfully fetched content from source ID: {source_id}")
@@ -94,20 +91,43 @@ def cleanup_old_content(self, days: int = 30):
     try:
         logger.info(f"Cleaning up content older than {days} days")
 
-        from app.models.rss_models import Content
+        from app.models.rss_models import Content, ReadingHistory, content_category
         from datetime import datetime, timedelta
 
         cutoff_date = datetime.utcnow() - timedelta(days=days)
 
-        # Delete old content that is not bookmarked and not read
+        # Find IDs of old, non-bookmarked content
+        old_ids = [
+            row[0] for row in
+            self.db.query(Content.id).filter(
+                Content.created_at < cutoff_date,
+                Content.is_bookmarked == False
+            ).all()
+        ]
+
+        if not old_ids:
+            logger.info("No old content to clean up")
+            return {'status': 'success', 'deleted_count': 0}
+
+        # Cascade: delete related records first
+        self.db.query(ReadingHistory).filter(
+            ReadingHistory.content_id.in_(old_ids)
+        ).delete(synchronize_session=False)
+
+        self.db.execute(
+            content_category.delete().where(
+                content_category.c.content_id.in_(old_ids)
+            )
+        )
+
+        # Delete the content itself
         deleted = self.db.query(Content).filter(
-            Content.created_at < cutoff_date,
-            Content.is_bookmarked == False
-        ).delete()
+            Content.id.in_(old_ids)
+        ).delete(synchronize_session=False)
 
         self.db.commit()
 
-        logger.info(f"Cleaned up {deleted} old content items")
+        logger.info(f"Cleaned up {deleted} old content items (with related data)")
 
         return {'status': 'success', 'deleted_count': deleted}
 
@@ -118,59 +138,80 @@ def cleanup_old_content(self, days: int = 30):
 
 
 @celery_app.task(bind=True, base=DatabaseTask)
-def initialize_default_data(self):
-    """Initialize default categories and sample RSS sources"""
+def generate_missing_summaries(self, batch_size: int = 20):
+    """Generate AI summaries for articles that don't have one yet"""
     try:
-        logger.info("Initializing default data")
+        from app.models.rss_models import Content
+        from app.services.summary_service import SummaryService
+        from app.core.config import settings
+
+        if not settings.DEEPSEEK_API_KEY:
+            logger.warning("DeepSeek API key not configured, skipping summary generation")
+            return {'status': 'skipped', 'reason': 'no_api_key'}
+
+        summary_service = SummaryService()
+
+        # Find articles without AI-generated summaries
+        # We look for articles that have content but summary is NULL or very short
+        articles = self.db.query(Content).filter(
+            Content.content_text.isnot(None),
+            Content.content_text != '',
+        ).order_by(Content.published_date.desc()).limit(batch_size).all()
+
+        generated = 0
+        skipped = 0
+
+        for article in articles:
+            # Skip if already has a decent summary (> 50 chars likely means AI-generated)
+            if article.summary and len(article.summary) > 80:
+                skipped += 1
+                continue
+
+            text_to_summarize = article.content_text or article.summary or article.title
+            if not text_to_summarize or len(text_to_summarize.strip()) < 50:
+                skipped += 1
+                continue
+
+            try:
+                max_length = summary_service.get_dynamic_length(text_to_summarize)
+                ai_summary = summary_service.generate_summary(text_to_summarize, max_length)
+                if ai_summary:
+                    article.summary = ai_summary
+                    self.db.commit()
+                    generated += 1
+                    logger.info(f"Generated summary for: {article.title[:50]}")
+                else:
+                    skipped += 1
+            except Exception as e:
+                logger.error(f"Error generating summary for article {article.id}: {e}")
+                skipped += 1
+
+        logger.info(f"Summary generation complete: {generated} generated, {skipped} skipped")
+        return {'status': 'success', 'generated': generated, 'skipped': skipped}
+
+    except Exception as e:
+        logger.error(f"Error in generate_missing_summaries task: {e}")
+        return {'status': 'error', 'message': str(e)}
+
+
+@celery_app.task(bind=True, base=DatabaseTask)
+def initialize_default_data(self):
+    """Initialize default categories and RSS sources (delegates to main.py)"""
+    try:
+        logger.info("Initializing default data via Celery task")
 
         from app.services.category_service import CategoryService
-        from app.api.schemas import RSSSourceCreate
+        from app.models.rss_models import RSSSource
+        from app.main import _initialize_default_sources
 
-        # Initialize default categories
         category_service = CategoryService(self.db)
-        await category_service.initialize_default_categories()
-        logger.info("Initialized default categories")
+        category_service.initialize_default_categories()
 
-        # Add sample RSS sources
-        rss_service = RSSService(self.db)
-
-        # Sample AI/Tech RSS sources
-        sample_sources = [
-            {
-                'name': 'OpenAI Blog',
-                'url': 'https://openai.com/blog/rss.xml',
-                'description': 'Official OpenAI blog posts',
-                'category_id': None  # Will be assigned to AI category
-            },
-            {
-                'name': 'TechCrunch AI',
-                'url': 'https://techcrunch.com/category/artificial-intelligence/feed/',
-                'description': 'AI news from TechCrunch',
-                'category_id': None
-            },
-            {
-                'name': 'MIT Technology Review',
-                'url': 'https://www.technologyreview.com/feed/',
-                'description': 'MIT Technology Review articles',
-                'category_id': None
-            }
-        ]
-
-        # Get AI category
-        ai_category = await category_service.get_category_by_name('AI')
-
-        for source_data in sample_sources:
-            try:
-                source_data['category_id'] = ai_category.id if ai_category else None
-                await rss_service.create_source(RSSSourceCreate(**source_data))
-                logger.info(f"Added RSS source: {source_data['name']}")
-            except ValueError as e:
-                logger.warning(f"Could not add {source_data['name']}: {e}")
-            except Exception as e:
-                logger.error(f"Error adding {source_data['name']}: {e}")
+        existing_sources = self.db.query(RSSSource).count()
+        if existing_sources == 0:
+            _initialize_default_sources(self.db, category_service)
 
         logger.info("Default data initialization completed")
-
         return {'status': 'success'}
 
     except Exception as e:

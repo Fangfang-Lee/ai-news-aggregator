@@ -1,9 +1,6 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Table, JSON
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Table
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.postgresql import UUID
-import uuid
 
 from app.core.database import Base
 
@@ -23,8 +20,8 @@ class RSSSource(Base):
     name = Column(String(255), nullable=False)
     url = Column(String(2048), nullable=False, unique=True)
     description = Column(Text, nullable=True)
-    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
-    is_active = Column(Boolean, default=True)
+    category_id = Column(Integer, ForeignKey("categories.id"), nullable=True, index=True)
+    is_active = Column(Boolean, default=True, index=True)
     last_fetched = Column(DateTime, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
@@ -63,9 +60,9 @@ class Content(Base):
     guid = Column(String(512), nullable=False, unique=True)
     source_url = Column(String(2048), nullable=False)
     categories = relationship("Category", secondary=content_category, back_populates="contents")
-    rss_source_id = Column(Integer, ForeignKey("rss_sources.id"))
-    is_read = Column(Boolean, default=False)
-    is_bookmarked = Column(Boolean, default=False)
+    rss_source_id = Column(Integer, ForeignKey("rss_sources.id"), index=True)
+    is_read = Column(Boolean, default=False, index=True)
+    is_bookmarked = Column(Boolean, default=False, index=True)
     created_at = Column(DateTime, server_default=func.now(), index=True)
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -77,7 +74,7 @@ class ReadingHistory(Base):
     __tablename__ = "reading_history"
 
     id = Column(Integer, primary_key=True, index=True)
-    content_id = Column(Integer, ForeignKey("content.id"), nullable=False)
+    content_id = Column(Integer, ForeignKey("content.id"), nullable=False, index=True)
     read_at = Column(DateTime, server_default=func.now())
     read_duration = Column(Integer, default=0)  # seconds
 

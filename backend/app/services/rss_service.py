@@ -1,6 +1,5 @@
 from typing import List, Optional, Dict
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
 from datetime import datetime
 import logging
 
@@ -19,7 +18,7 @@ class RSSService:
         self.db = db
         self.crawler = RSSCrawler()
 
-    async def get_sources(
+    def get_sources(
         self,
         category_id: Optional[int] = None,
         skip: int = 0,
@@ -33,15 +32,16 @@ class RSSService:
 
         return query.order_by(RSSSource.name).offset(skip).limit(limit).all()
 
-    async def get_source(self, source_id: int) -> Optional[RSSSource]:
+    def get_source(self, source_id: int) -> Optional[RSSSource]:
         """Get RSS source by ID"""
         return self.db.query(RSSSource).filter(RSSSource.id == source_id).first()
 
-    async def create_source(self, source: RSSSourceCreate) -> RSSSource:
+    def create_source(self, source: RSSSourceCreate) -> RSSSource:
         """Create a new RSS source"""
-        # Validate RSS URL
-        if not self.crawler.validate_feed_url(source.url):
-            raise ValueError(f"Invalid RSS feed URL: {source.url}")
+        # Check if source with same URL already exists
+        existing = self.db.query(RSSSource).filter(RSSSource.url == source.url).first()
+        if existing:
+            raise ValueError(f"RSS source with URL '{source.url}' already exists")
 
         db_source = RSSSource(**source.model_dump())
         self.db.add(db_source)
@@ -49,9 +49,9 @@ class RSSService:
         self.db.refresh(db_source)
         return db_source
 
-    async def update_source(self, source_id: int, source_update: RSSSourceUpdate) -> Optional[RSSSource]:
+    def update_source(self, source_id: int, source_update: RSSSourceUpdate) -> Optional[RSSSource]:
         """Update an existing RSS source"""
-        db_source = await self.get_source(source_id)
+        db_source = self.get_source(source_id)
         if not db_source:
             return None
 
@@ -63,9 +63,9 @@ class RSSService:
         self.db.refresh(db_source)
         return db_source
 
-    async def delete_source(self, source_id: int) -> bool:
+    def delete_source(self, source_id: int) -> bool:
         """Delete an RSS source"""
-        db_source = await self.get_source(source_id)
+        db_source = self.get_source(source_id)
         if not db_source:
             return False
 
@@ -73,9 +73,9 @@ class RSSService:
         self.db.commit()
         return True
 
-    async def fetch_source_content(self, source_id: int) -> bool:
+    def fetch_source_content(self, source_id: int) -> bool:
         """Fetch content from a specific RSS source"""
-        source = await self.get_source(source_id)
+        source = self.get_source(source_id)
         if not source or not source.is_active:
             return False
 
@@ -93,7 +93,7 @@ class RSSService:
             new_count = 0
 
             for entry in entries:
-                created = await content_service.create_or_update_content(
+                created = content_service.create_or_update_content(
                     entry,
                     source_id=source.id
                 )
@@ -111,9 +111,25 @@ class RSSService:
             logger.error(f"Error fetching content from source {source.name}: {e}")
             return False
 
-    async def get_source_stats(self, source_id: int) -> Optional[Dict]:
+    def fetch_all_active_sources(self) -> int:
+        """Fetch content from all active RSS sources"""
+        active_sources = self.db.query(RSSSource.id).filter(
+            RSSSource.is_active == True
+        ).all()
+
+        count = 0
+        for (source_id,) in active_sources:
+            try:
+                self.fetch_source_content(source_id)
+                count += 1
+            except Exception as e:
+                logger.error(f"Error fetching from source {source_id}: {e}")
+
+        return count
+
+    def get_source_stats(self, source_id: int) -> Optional[Dict]:
         """Get statistics for an RSS source"""
-        source = await self.get_source(source_id)
+        source = self.get_source(source_id)
         if not source:
             return None
 

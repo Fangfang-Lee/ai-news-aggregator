@@ -1,10 +1,10 @@
+import re
 import feedparser
 import requests
+import html2text
 from typing import List, Dict, Optional
 from datetime import datetime
 import logging
-from urllib.parse import urljoin
-import html2text
 
 logger = logging.getLogger(__name__)
 
@@ -12,11 +12,19 @@ logger = logging.getLogger(__name__)
 class RSSCrawler:
     """RSS feed crawler for fetching news articles"""
 
+    DEFAULT_USER_AGENT = (
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/131.0.0.0 Safari/537.36'
+    )
+
     def __init__(self, timeout: int = 30, user_agent: Optional[str] = None):
         self.timeout = timeout
         self.session = requests.Session()
-        if user_agent:
-            self.session.headers.update({'User-Agent': user_agent})
+        self.session.headers.update({
+            'User-Agent': user_agent or self.DEFAULT_USER_AGENT,
+            'Accept': 'application/rss+xml, application/xml, text/xml, */*',
+        })
         self.html_converter = html2text.HTML2Text()
         self.html_converter.ignore_links = False
         self.html_converter.ignore_images = False
@@ -71,14 +79,16 @@ class RSSCrawler:
         """
         # Get published date
         published_date = None
-        if hasattr(entry, 'published_parsed') and entry.published_parsed:
+        published_parsed = entry.get('published_parsed')
+        updated_parsed = entry.get('updated_parsed')
+        if published_parsed:
             try:
-                published_date = datetime(*entry.published_parsed[:6])
+                published_date = datetime(*published_parsed[:6])
             except (TypeError, ValueError):
                 pass
-        elif hasattr(entry, 'updated_parsed') and entry.updated_parsed:
+        elif updated_parsed:
             try:
-                published_date = datetime(*entry.updated_parsed[:6])
+                published_date = datetime(*updated_parsed[:6])
             except (TypeError, ValueError):
                 pass
 
@@ -88,8 +98,9 @@ class RSSCrawler:
         # Get summary/content
         summary = entry.get('summary')
         content = None
-        if hasattr(entry, 'content') and entry.content:
-            content = entry.content[0].get('value', '') if isinstance(entry.content, list) else entry.content
+        entry_content = entry.get('content')
+        if entry_content:
+            content = entry_content[0].get('value', '') if isinstance(entry_content, list) else entry_content
 
         # Convert HTML to plain text
         content_text = None
@@ -102,10 +113,23 @@ class RSSCrawler:
                 logger.warning(f"Error converting HTML to text: {e}")
                 content_text = self._strip_html_tags(html_content)
 
+        # Fallback: if RSS didn't provide content, fetch the article page
+        if (not content_text or len(content_text.strip()) < 100) and entry.get('link'):
+            try:
+                fetched = self.fetch_article_content(entry['link'])
+                if fetched and len(fetched) > len(content_text or ''):
+                    content_text = fetched
+                    if not html_content:
+                        html_content = content_text
+                    logger.info(f"Fetched full article content from {entry['link'][:60]} ({len(fetched)} chars)")
+            except Exception as e:
+                logger.debug(f"Could not fetch article content from {entry.get('link')}: {e}")
+
         # Extract image URL
         image_url = None
-        if hasattr(entry, 'enclosures') and entry.enclosures:
-            for enclosure in entry.enclosures:
+        enclosures = entry.get('enclosures')
+        if enclosures:
+            for enclosure in enclosures:
                 if enclosure.get('type', '').startswith('image/'):
                     image_url = enclosure.get('href')
                     break
@@ -128,13 +152,10 @@ class RSSCrawler:
 
     def _strip_html_tags(self, text: str) -> str:
         """Strip HTML tags from text"""
-        import re
-        clean = re.compile('<.*?>')
-        return re.sub(clean, '', text).strip()
+        return re.sub(r'<.*?>', '', text).strip()
 
     def _extract_first_image(self, html: str) -> Optional[str]:
         """Extract first image URL from HTML"""
-        import re
         match = re.search(r'<img[^>]+src=["\']([^"\']+)["\']', html)
         return match.group(1) if match else None
 
@@ -163,6 +184,61 @@ class RSSCrawler:
                 continue
 
         return entries
+
+    def fetch_article_content(self, url: str, max_length: int = 8000) -> Optional[str]:
+        """
+        Fetch article page and extract main text content.
+        Used as fallback when RSS feed doesn't provide content.
+
+        Args:
+            url: Article URL
+            max_length: Maximum characters to extract
+
+        Returns:
+            Extracted text content or None
+        """
+        try:
+            response = self.session.get(url, timeout=15)
+            response.raise_for_status()
+
+            # Only process HTML pages
+            content_type = response.headers.get('content-type', '')
+            if 'html' not in content_type.lower():
+                return None
+
+            html = response.text
+
+            # Use html2text to extract readable text
+            converter = html2text.HTML2Text()
+            converter.ignore_links = True
+            converter.ignore_images = True
+            converter.ignore_emphasis = True
+            converter.body_width = 0
+            converter.skip_internal_links = True
+
+            text = converter.handle(html).strip()
+
+            # Basic cleanup: remove very short lines (nav, footer debris)
+            lines = text.split('\n')
+            meaningful_lines = [
+                line.strip() for line in lines
+                if len(line.strip()) > 15  # skip short navigation/menu items
+            ]
+            text = '\n'.join(meaningful_lines)
+
+            if len(text) > max_length:
+                text = text[:max_length] + '...'
+
+            return text if len(text) > 100 else None
+
+        except requests.exceptions.Timeout:
+            logger.debug(f"Timeout fetching article: {url}")
+        except requests.exceptions.RequestException as e:
+            logger.debug(f"Error fetching article: {url} - {e}")
+        except Exception as e:
+            logger.debug(f"Unexpected error fetching article: {url} - {e}")
+
+        return None
 
     def validate_feed_url(self, url: str) -> bool:
         """

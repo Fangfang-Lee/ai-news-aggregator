@@ -48,11 +48,15 @@ class NewsAggregator {
             this.loadArticles();
         });
 
-        // 状态筛选
-        document.getElementById('statusFilter').addEventListener('change', (e) => {
-            this.filters.status = e.target.value;
-            this.currentPage = 1;
-            this.loadArticles();
+        // 状态标签筛选
+        document.querySelectorAll('.status-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.status-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                this.filters.status = tab.dataset.status;
+                this.currentPage = 1;
+                this.loadArticles();
+            });
         });
 
         // 分页
@@ -159,6 +163,8 @@ class NewsAggregator {
 
             if (this.filters.status === 'unread') {
                 params.append('is_read', 'false');
+            } else if (this.filters.status === 'read') {
+                params.append('is_read', 'true');
             } else if (this.filters.status === 'bookmarked') {
                 params.append('is_bookmarked', 'true');
             }
@@ -169,6 +175,9 @@ class NewsAggregator {
             this.totalPages = Math.ceil(data.total / this.pageSize);
             this.renderArticles(data.items);
             this.updatePagination(data.total);
+
+            // 更新状态标签计数
+            this.updateStatusCounts();
         } catch (error) {
             console.error('加载文章失败:', error);
             this.showError('加载文章失败');
@@ -310,7 +319,7 @@ class NewsAggregator {
         this.openModal('articleModal');
     }
 
-    toggleReadStatus(articleId, isRead) {
+    async toggleReadStatus(articleId, isRead) {
         const endpoint = isRead ? '/mark-unread' : '/mark-read';
         try {
             await fetch(`${API_BASE}/content/${articleId}${endpoint}`, { method: 'POST' });
@@ -320,7 +329,7 @@ class NewsAggregator {
         }
     }
 
-    toggleBookmark(articleId) {
+    async toggleBookmark(articleId) {
         try {
             await fetch(`${API_BASE}/content/${articleId}/bookmark`, { method: 'POST' });
             await this.loadArticles(); // 刷新 UI
@@ -344,7 +353,7 @@ class NewsAggregator {
         btn.disabled = false;
     }
 
-    addSource() {
+    async addSource() {
         const form = document.getElementById('addSourceForm');
         const formData = new FormData(form);
 
@@ -377,6 +386,40 @@ class NewsAggregator {
         }
     }
 
+    async updateStatusCounts() {
+        try {
+            const baseParams = new URLSearchParams();
+            if (this.filters.category) baseParams.append('category_id', this.filters.category);
+            if (this.filters.source) baseParams.append('source_id', this.filters.source);
+            if (this.filters.search) baseParams.append('search', this.filters.search);
+            baseParams.append('page_size', '1');
+
+            // Fetch counts in parallel
+            const [allRes, unreadRes, readRes, bookmarkedRes] = await Promise.all([
+                fetch(`${API_BASE}/content/?${new URLSearchParams(baseParams)}`),
+                fetch(`${API_BASE}/content/?${new URLSearchParams([...baseParams, ['is_read', 'false']])}`),
+                fetch(`${API_BASE}/content/?${new URLSearchParams([...baseParams, ['is_read', 'true']])}`),
+                fetch(`${API_BASE}/content/?${new URLSearchParams([...baseParams, ['is_bookmarked', 'true']])}`),
+            ]);
+
+            const [allData, unreadData, readData, bookmarkedData] = await Promise.all([
+                allRes.json(), unreadRes.json(), readRes.json(), bookmarkedRes.json()
+            ]);
+
+            const setCount = (id, count) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = count > 0 ? count : '';
+            };
+
+            setCount('countAll', allData.total);
+            setCount('countUnread', unreadData.total);
+            setCount('countRead', readData.total);
+            setCount('countBookmarked', bookmarkedData.total);
+        } catch (error) {
+            console.error('更新状态计数失败:', error);
+        }
+    }
+
     updatePagination(total) {
         document.getElementById('pageInfo').textContent =
             `第 ${this.currentPage} / ${this.totalPages} 页 (共 ${total} 篇)`;
@@ -397,7 +440,9 @@ class NewsAggregator {
     showLoading(show) {
         document.getElementById('loading').classList.toggle('hidden', !show);
         document.getElementById('articlesList').classList.toggle('hidden', show);
-        document.getElementById('emptyState').classList.toggle('hidden', show);
+        if (show) {
+            document.getElementById('emptyState').classList.add('hidden');
+        }
     }
 
     showError(message) {

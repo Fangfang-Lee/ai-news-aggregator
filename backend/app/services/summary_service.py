@@ -13,7 +13,7 @@ class SummaryService:
         self.api_key = settings.DEEPSEEK_API_KEY
         self.base_url = "https://api.deepseek.com/v1/chat/completions"
 
-    async def generate_summary(self, content: str, max_length: int = 300) -> Optional[str]:
+    def generate_summary(self, content: str, max_length: int = 300) -> Optional[str]:
         """
         Generate a summary of article content using DeepSeek API
 
@@ -48,8 +48,8 @@ class SummaryService:
         user_prompt = f"新闻内容：\n\n{content}\n\n请生成中文摘要："
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
+            with httpx.Client(timeout=30.0) as client:
+                response = client.post(
                     self.base_url,
                     headers={
                         "Authorization": f"Bearer {self.api_key}",
@@ -82,7 +82,7 @@ class SummaryService:
             logger.error(f"Error generating summary: {e}")
             return None
 
-    async def get_dynamic_length(self, content: str) -> int:
+    def get_dynamic_length(self, content: str) -> int:
         """
         Dynamically determine summary length based on content
 
