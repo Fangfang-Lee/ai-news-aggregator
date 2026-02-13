@@ -1,20 +1,14 @@
 # ============================================================
-# Render Blueprint — AI News Aggregator
+# Render Blueprint — AI News Aggregator (免费方案)
 # ============================================================
 # Deploy: Render Dashboard → New → Blueprint → Connect repo
 #
-# 外部依赖:
-#   - Supabase PostgreSQL (免费) — 获取连接字符串后填入 DATABASE_URL
-#   - DeepSeek API Key — 填入 DEEPSEEK_API_KEY
+# 全部免费:
+#   - Web Service (Free):  $0/月  ← 15 分钟无访问后休眠, 冷启动 ~30s
+#   - Redis KVS (Free):   $0/月  (25 MB)
+#   - Supabase PostgreSQL: $0/月  (500 MB)
 #
-# 费用估算:
-#   - Web Service (Starter):  $7/月  ← 免费层会 15 分钟无访问后休眠
-#   - Worker (Starter):       $7/月  ← Worker 不支持免费层
-#   - Redis KVS (Free):       $0/月  (25 MB, 足够)
-#   - 合计:                   ~$14/月 + Supabase 免费
-#
-# 免费层替代方案 (见 README "免费部署" 章节):
-#   只部署 Web Service (free), 用外部 Cron 服务触发抓取接口
+# 定时抓取: 用 cron-job.org (免费) 每 5 分钟 POST /api/content/fetch-all
 # ============================================================
 
 services:
@@ -23,9 +17,9 @@ services:
     name: ai-news-backend
     runtime: python
     region: singapore
-    plan: starter            # 改为 free 可用免费层 (会休眠)
+    plan: free
     buildCommand: ./build.sh
-    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
@@ -54,45 +48,12 @@ services:
       - key: CORS_ORIGINS
         value: '["https://ai-news-backend.onrender.com"]'
 
-  # ─── Celery Worker + Beat (合并为单进程, 节省一个服务) ────
-  - type: worker
-    name: ai-news-worker
-    runtime: python
-    region: singapore
-    plan: starter            # Worker 最低 Starter ($7/月)
-    buildCommand: cd backend && pip install -r requirements.txt
-    startCommand: cd backend && celery -A app.celery_app worker --beat --loglevel=info --concurrency=2
-    envVars:
-      - key: PYTHON_VERSION
-        value: "3.11.0"
-      - key: DATABASE_URL
-        sync: false
-      - key: REDIS_URL
-        fromService:
-          name: ai-news-redis
-          type: keyvalue
-          property: connectionString
-      - key: CELERY_BROKER_URL
-        fromService:
-          name: ai-news-redis
-          type: keyvalue
-          property: connectionString
-      - key: CELERY_RESULT_BACKEND
-        fromService:
-          name: ai-news-redis
-          type: keyvalue
-          property: connectionString
-      - key: DEEPSEEK_API_KEY
-        sync: false
-      - key: CONTENT_MIN_DATE
-        value: "2026-02-10"
-
   # ─── Redis Key-Value Store ─────────────────────────────────
   - type: keyvalue
     name: ai-news-redis
-    plan: free               # 25 MB, 足够 Celery + 缓存
+    plan: free               # 25 MB, 足够缓存
     region: singapore
     maxmemoryPolicy: allkeys-lru
-    ipAllowList:             # KVS 必须声明 ipAllowList
+    ipAllowList:
       - source: 0.0.0.0/0
         description: everywhere
