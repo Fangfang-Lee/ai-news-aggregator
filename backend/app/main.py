@@ -35,12 +35,11 @@ async def lifespan(app: FastAPI):
     # --- Startup ---
     logger.info("Starting AI News Aggregator...")
 
-    # Create database tables
-    Base.metadata.create_all(bind=engine)
-    logger.info("Database tables created")
-
-    # Initialize default categories and RSS sources
+    # Create database tables & initialize default data
     try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created")
+
         from app.services.category_service import CategoryService
         from app.models.rss_models import RSSSource
 
@@ -59,7 +58,7 @@ async def lifespan(app: FastAPI):
         finally:
             db.close()
     except Exception as e:
-        logger.error(f"Error initializing default data: {e}")
+        logger.error(f"Database initialization failed (app will still start): {e}")
 
     yield  # Application is running
 
