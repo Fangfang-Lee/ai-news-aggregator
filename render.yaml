@@ -35,17 +35,17 @@ services:
       - key: REDIS_URL
         fromService:
           name: ai-news-redis
-          type: kvs
+          type: keyvalue
           property: connectionString
       - key: CELERY_BROKER_URL
         fromService:
           name: ai-news-redis
-          type: kvs
+          type: keyvalue
           property: connectionString
       - key: CELERY_RESULT_BACKEND
         fromService:
           name: ai-news-redis
-          type: kvs
+          type: keyvalue
           property: connectionString
       - key: DEEPSEEK_API_KEY
         sync: false          # ← 手动填入 Dashboard
@@ -70,26 +70,29 @@ services:
       - key: REDIS_URL
         fromService:
           name: ai-news-redis
-          type: kvs
+          type: keyvalue
           property: connectionString
       - key: CELERY_BROKER_URL
         fromService:
           name: ai-news-redis
-          type: kvs
+          type: keyvalue
           property: connectionString
       - key: CELERY_RESULT_BACKEND
         fromService:
           name: ai-news-redis
-          type: kvs
+          type: keyvalue
           property: connectionString
       - key: DEEPSEEK_API_KEY
         sync: false
       - key: CONTENT_MIN_DATE
         value: "2026-02-10"
 
-# ─── Redis Key-Value Store ─────────────────────────────────
-kvs:
-  - name: ai-news-redis
+  # ─── Redis Key-Value Store ─────────────────────────────────
+  - type: keyvalue
+    name: ai-news-redis
     plan: free               # 25 MB, 足够 Celery + 缓存
     region: singapore
     maxmemoryPolicy: allkeys-lru
+    ipAllowList:             # KVS 必须声明 ipAllowList
+      - source: 0.0.0.0/0
+        description: everywhere
