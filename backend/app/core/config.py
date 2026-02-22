@@ -22,8 +22,9 @@ class Settings(BaseSettings):
     RSS_FETCH_INTERVAL: int = 300  # seconds
     CONTENT_MIN_DATE: str = "2026-02-10"  # 只保留此日期及之后的文章
 
-    # DeepSeek API
-    DEEPSEEK_API_KEY: str = ""
+    # MiniMax API (Coding Plan Max)
+    MINIMAX_API_KEY: str = ""
+    MINIMAX_MODEL: str = "MiniMax-M2.5"  # MiniMax M2.5 模型
 
     class Config:
         env_file = ".env"

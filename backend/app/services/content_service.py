@@ -19,7 +19,7 @@ class ContentService:
     def __init__(self, db: Session):
         self.db = db
         self.parser = ContentParser()
-        self.summary_service = SummaryService() if settings.DEEPSEEK_API_KEY else None
+        self.summary_service = SummaryService() if settings.MINIMAX_API_KEY else None
 
     def get_content(
         self,
@@ -111,12 +111,7 @@ class ContentService:
         content_text = self.parser.clean_text(entry_data.get('content_text'))
 
         # Relevance filtering
-        # Step 1: Blacklist — always filter out pure financial/stock noise
-        if self.parser.is_financial_noise(title):
-            logger.debug(f"Filtered financial noise: {title[:60]}")
-            return False
-
-        # Step 2: Keyword relevance check
+        # Keyword relevance check
         matched_category = self.parser.categorize_article(
             title, content_text or cleaned_summary or ''
         )

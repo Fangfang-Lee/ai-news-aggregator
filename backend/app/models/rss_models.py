@@ -49,7 +49,7 @@ class Content(Base):
     __tablename__ = "content"
 
     id = Column(Integer, primary_key=True, index=True)
-    title = Column(String(512), nullable=False, index=True)
+    title = Column(String(1024), nullable=False, index=True)
     summary = Column(Text, nullable=True)
     content_html = Column(Text, nullable=True)
     content_text = Column(Text, nullable=True)

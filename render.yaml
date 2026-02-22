@@ -41,8 +41,10 @@ services:
           name: ai-news-redis
           type: keyvalue
           property: connectionString
-      - key: DEEPSEEK_API_KEY
-        sync: false          # ← 手动填入 Dashboard
+      - key: MINIMAX_API_KEY
+        sync: false          # ← 手动填入 Dashboard (MiniMax API Key)
+      - key: MINIMAX_MODEL
+        value: "MiniMax-M2.5"
       - key: CONTENT_MIN_DATE
         value: "2026-02-10"
       - key: CORS_ORIGINS

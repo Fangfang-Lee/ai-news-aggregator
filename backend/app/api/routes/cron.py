@@ -60,7 +60,7 @@ async def cron_fetch_all(
 async def cron_cleanup(
     request: Request,
     db: Session = Depends(get_db),
-    days: int = 30,
+    days: int = 7,
     _: bool = Depends(verify_cron_secret)
 ):
     """Cron endpoint to cleanup old content"""

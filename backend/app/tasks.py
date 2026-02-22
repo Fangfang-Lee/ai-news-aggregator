@@ -91,7 +91,7 @@ def fetch_source(self, source_id: int):
 
 
 @celery_app.task(bind=True, base=DatabaseTask)
-def cleanup_old_content(self, days: int = 30):
+def cleanup_old_content(self, days: int = 7):
     """Clean up content older than specified days (except bookmarked items)"""
     try:
         logger.info(f"Cleaning up content older than {days} days")
@@ -150,8 +150,8 @@ def generate_missing_summaries(self, batch_size: int = 20):
         from app.services.summary_service import SummaryService
         from app.core.config import settings
 
-        if not settings.DEEPSEEK_API_KEY:
-            logger.warning("DeepSeek API key not configured, skipping summary generation")
+        if not settings.MINIMAX_API_KEY:
+            logger.warning("MiniMax API key not configured, skipping summary generation")
             return {'status': 'skipped', 'reason': 'no_api_key'}
 
         summary_service = SummaryService()

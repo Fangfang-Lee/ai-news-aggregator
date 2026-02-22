@@ -3,8 +3,9 @@ x-common-env: &common-env
   REDIS_URL: redis://redis:6379/0
   CELERY_BROKER_URL: redis://redis:6379/1
   CELERY_RESULT_BACKEND: redis://redis:6379/2
-  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
   CONTENT_MIN_DATE: ${CONTENT_MIN_DATE:-2026-02-10}
+  MINIMAX_API_KEY: ${MINIMAX_API_KEY:-}
+  MINIMAX_MODEL: ${MINIMAX_MODEL:-MiniMax-M2.5}
 
 x-common-depends: &common-depends
   postgres:

@@ -113,8 +113,9 @@ class RSSCrawler:
                 logger.warning(f"Error converting HTML to text: {e}")
                 content_text = self._strip_html_tags(html_content)
 
-        # Fallback: if RSS didn't provide content, fetch the article page
-        if (not content_text or len(content_text.strip()) < 100) and entry.get('link'):
+        # Fallback: if RSS didn't provide enough content, fetch the article page
+        # Use 500 as threshold since RSS summaries are usually 200-500 chars but not full article
+        if (not content_text or len(content_text.strip()) < 500) and entry.get('link'):
             try:
                 fetched = self.fetch_article_content(entry['link'])
                 if fetched and len(fetched) > len(content_text or ''):
@@ -125,16 +126,19 @@ class RSSCrawler:
             except Exception as e:
                 logger.debug(f"Could not fetch article content from {entry.get('link')}: {e}")
 
-        # Extract image URL
+        # Extract image URL (skip base64 images as they are too long for DB)
         image_url = None
         enclosures = entry.get('enclosures')
         if enclosures:
             for enclosure in enclosures:
-                if enclosure.get('type', '').startswith('image/'):
-                    image_url = enclosure.get('href')
+                href = enclosure.get('href', '')
+                if enclosure.get('type', '').startswith('image/') and href and not href.startswith('data:'):
+                    image_url = href
                     break
         elif summary and '<img' in summary:
-            image_url = self._extract_first_image(summary)
+            img = self._extract_first_image(summary)
+            if img and not img.startswith('data:'):
+                image_url = img
 
         return {
             'title': entry.get('title', 'Untitled'),

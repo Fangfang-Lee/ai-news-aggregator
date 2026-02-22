@@ -16,8 +16,9 @@ from app.models.rss_models import Base
 from app.api.routes import api_router
 
 # Resolve paths relative to the working directory
+# In Docker, frontend is mounted at /frontend (see docker-compose.yml)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-FRONTEND_DIR = os.path.join(BASE_DIR, "frontend")
+FRONTEND_DIR = "/frontend" if os.path.exists("/frontend") else os.path.join(BASE_DIR, "frontend")
 STATIC_DIR = os.path.join(FRONTEND_DIR, "static")
 TEMPLATES_DIR = os.path.join(FRONTEND_DIR, "templates")
 

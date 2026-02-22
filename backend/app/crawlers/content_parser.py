@@ -87,22 +87,6 @@ class ContentParser:
             },
         }
 
-        # Negative keywords: financial/stock content that should be filtered out
-        # If title contains any of these AND no core tech term, article is skipped
-        self.blacklist_keywords = {
-            # 股市术语
-            '分红', 'ETF', '股价', '股票', '市盈率', '涨停', '跌停',
-            '基金净值', '债券', '期货', '外汇汇率', '大盘', '牛市', '熊市',
-            '个股', '仓位', '持仓', '减持', '增持', 'A股', '港股', '美股',
-            '券商', '散户', '抄底', '割肉', '套牢', '解套',
-            '股息', '市值蒸发', '跌幅', '涨幅', '估值',
-            # 理财/投资分析
-            '每股收益', '营业利润', '盈利超预期', '财报', '季报',
-            '分析师评级', '目标价', '买入评级',
-            # 非科技行业
-            '冲刺港股', '冲刺IPO',
->>>>>>> ef49eb6ac0418a6e310df813fb16fe0718f4f002
-        }
 
         # Chinese and global tech company names for entity extraction
         self.company_patterns = [
@@ -199,34 +183,6 @@ class ContentParser:
             entities.extend(matches)
 
         return list(set(entities))[:3]  # Limit to top 3 unique
-
-    def is_financial_noise(self, title: str) -> bool:
-        """
-        Check if an article title indicates pure financial/stock content
-        that is not relevant to tech/AI readers.
-
-        Args:
-            title: Article title
-
-        Returns:
-            True if the article appears to be irrelevant financial content
-        """
-        if not title:
-            return False
-
-        for keyword in self.blacklist_keywords:
-            if keyword in title:
-                # Double check: if the title also contains core tech keywords, keep it
-                # e.g. "AI概念股涨停" should still pass
-                core_tech_terms = {'AI', '人工智能', '芯片', '半导体', '科技', '互联网',
-                                   '大模型', '机器人', '自动驾驶', '算力', '数据中心',
-                                   '云计算', 'SaaS', '开源'}
-                for tech_term in core_tech_terms:
-                    if tech_term in title:
-                        return False  # Has tech relevance, keep it
-                return True  # Pure financial, filter out
-
-        return False
 
     def categorize_article(self, title: str, content: str) -> Optional[str]:
         """
