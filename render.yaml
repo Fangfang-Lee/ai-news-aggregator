@@ -1,74 +1,59 @@
-# AI News Aggregator - Render 部署配置
+# ============================================================
+# Render Blueprint — AI News Aggregator (免费方案)
+# ============================================================
+# Deploy: Render Dashboard → New → Blueprint → Connect repo
+#
+# 全部免费:
+#   - Web Service (Free):  $0/月  ← 15 分钟无访问后休眠, 冷启动 ~30s
+#   - Redis KVS (Free):   $0/月  (25 MB)
+#   - Supabase PostgreSQL: $0/月  (500 MB)
+#
+# 定时抓取: 用 cron-job.org (免费) 每 5 分钟 POST /api/content/fetch-all
+# ============================================================
 
 services:
-  # 后端服务
+  # ─── FastAPI Web Service ───────────────────────────────────
   - type: web
     name: ai-news-backend
-    env: docker
-    dockerfilePath: ./backend/Dockerfile
+    runtime: python
+    region: singapore
     plan: free
-    region: oregon
-    branch: main
-    buildCommand: pip install -r requirements.txt
-    numInstances: 1
+    buildCommand: ./build.sh
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    # healthCheckPath 已移除 — 避免 DB/Redis 暂不可用时 Render 判定部署失败
     envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.0"
       - key: DATABASE_URL
-        # Use your Supabase Postgres connection string here (Settings -> Database -> Connection string).
-        # Example:
-        # postgresql://postgres:<PASSWORD>@db.<PROJECT_REF>.supabase.co:5432/postgres?sslmode=require
-        value: postgresql://postgres:<PASSWORD>@db.<PROJECT_REF>.supabase.co:5432/postgres?sslmode=require
-        type: secret
-        sync: false
+        sync: false          # ← Supabase 连接字符串, 手动填入 Dashboard
       - key: REDIS_URL
-        value: redis://redis:6379/0
-        type: secret
-        generateValue: true
-      - key: DEEPSEEK_API_KEY
-        value: ${DEEPSEEK_API_KEY}
-        type: secret
-        sync: false
+        fromService:
+          name: ai-news-redis
+          type: keyvalue
+          property: connectionString
       - key: CELERY_BROKER_URL
-        value: redis://redis:6379/1
-        type: secret
-        generateValue: true
+        fromService:
+          name: ai-news-redis
+          type: keyvalue
+          property: connectionString
       - key: CELERY_RESULT_BACKEND
-        value: redis://redis:6379/2
-        type: secret
-        generateValue: true
+        fromService:
+          name: ai-news-redis
+          type: keyvalue
+          property: connectionString
+      - key: DEEPSEEK_API_KEY
+        sync: false          # ← 手动填入 Dashboard
+      - key: CONTENT_MIN_DATE
+        value: "2026-02-10"
+      - key: CORS_ORIGINS
+        value: '["https://ai-news-backend.onrender.com"]'
 
-  # Celery Worker
-  - type: worker
-    name: ai-news-celery-worker
-    env: docker
-    dockerfilePath: ./backend/Dockerfile
-    plan: free
-    region: oregon
-    branch: main
-    numInstances: 1
-    envVars:
-      - key: DATABASE_URL
-        fromService:
-          name: ai-news-backend
-          type: secret
-          key: DATABASE_URL
-      - key: REDIS_URL
-        fromService:
-          name: ai-news-backend
-          type: secret
-          key: REDIS_URL
-      - key: DEEPSEEK_API_KEY
-        value: ${DEEPSEEK_API_KEY}
-        type: secret
-        sync: false
-      - key: CELERY_BROKER_URL
-        fromService:
-          name: ai-news-backend
-          type: secret
-          key: CELERY_BROKER_URL
-      - key: CELERY_RESULT_BACKEND
-        fromService:
-          name: ai-news-backend
-          type: secret
-          key: CELERY_RESULT_BACKEND
-    buildCommand: pip install -r requirements.txt
-    startCommand: celery -A app.celery_app worker --loglevel=info
+  # ─── Redis Key-Value Store ─────────────────────────────────
+  - type: keyvalue
+    name: ai-news-redis
+    plan: free               # 25 MB, 足够缓存
+    region: singapore
+    maxmemoryPolicy: allkeys-lru
+    ipAllowList:
+      - source: 0.0.0.0/0
+        description: everywhere

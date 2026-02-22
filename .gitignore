@@ -58,7 +58,10 @@ docker-compose.override.yml
 
 # Celery
 celerybeat-schedule
+celerybeat-schedule.db
 
-# Editors and Tools
-.cursor/
-.clauderc.json
+# Virtual environment
+.venv/
+
+# Generated images
+image/

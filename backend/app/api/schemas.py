@@ -1,6 +1,20 @@
 from pydantic import BaseModel, HttpUrl, Field
-from typing import Optional, List
-from datetime import datetime
+from pydantic.functional_serializers import PlainSerializer
+from typing import Optional, List, Annotated
+from datetime import datetime, timezone
+
+
+def _serialize_utc_datetime(v: datetime) -> Optional[str]:
+    """Serialize naive datetime as UTC (append Z suffix)"""
+    if v is None:
+        return None
+    if v.tzinfo is None:
+        return v.replace(tzinfo=timezone.utc).isoformat()
+    return v.isoformat()
+
+
+# Custom datetime type that always serializes with UTC timezone
+UTCDatetime = Annotated[datetime, PlainSerializer(_serialize_utc_datetime, return_type=str)]
 
 
 # RSS Source Schemas
@@ -26,9 +40,9 @@ class RSSSourceUpdate(BaseModel):
 class RSSSourceResponse(RSSSourceBase):
     id: int
     is_active: bool
-    last_fetched: Optional[datetime]
-    created_at: datetime
-    updated_at: datetime
+    last_fetched: Optional[UTCDatetime] = None
+    created_at: UTCDatetime
+    updated_at: UTCDatetime
 
     class Config:
         from_attributes = True
@@ -53,7 +67,7 @@ class CategoryUpdate(BaseModel):
 
 class CategoryResponse(CategoryBase):
     id: int
-    created_at: datetime
+    created_at: UTCDatetime
 
     class Config:
         from_attributes = True
@@ -68,7 +82,7 @@ class ContentBase(BaseModel):
     link: str = Field(..., description="Article link")
     image_url: Optional[str] = Field(None, description="Article image URL")
     author: Optional[str] = Field(None, description="Article author")
-    published_date: Optional[datetime] = Field(None, description="Publication date")
+    published_date: Optional[UTCDatetime] = Field(None, description="Publication date")
 
 
 class ContentResponse(ContentBase):
@@ -79,7 +93,7 @@ class ContentResponse(ContentBase):
     categories: List[CategoryResponse] = []
     is_read: bool
     is_bookmarked: bool
-    created_at: datetime
+    created_at: UTCDatetime
 
     class Config:
         from_attributes = True
@@ -96,7 +110,7 @@ class ContentListResponse(BaseModel):
 class ReadingHistoryResponse(BaseModel):
     id: int
     content_id: int
-    read_at: datetime
+    read_at: UTCDatetime
     read_duration: int
 
     class Config:
@@ -115,5 +129,5 @@ class SearchFilters(BaseModel):
     source_id: Optional[int] = None
     is_read: Optional[bool] = None
     is_bookmarked: Optional[bool] = None
-    date_from: Optional[datetime] = None
-    date_to: Optional[datetime] = None
+    date_from: Optional[UTCDatetime] = None
+    date_to: Optional[UTCDatetime] = None

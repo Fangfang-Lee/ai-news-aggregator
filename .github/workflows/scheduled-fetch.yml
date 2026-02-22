@@ -1,0 +1,43 @@
+# ============================================================
+# GitHub Actions — 定时触发 RSS 抓取 & AI 摘要生成
+# ============================================================
+# 替代 Celery Beat 的免费方案
+# GitHub Actions 免费额度: 2000 分钟/月 (足够)
+# 注意: schedule cron 可能有 3-10 分钟延迟, 属正常现象
+# ============================================================
+
+name: Scheduled RSS Fetch
+
+on:
+  schedule:
+    # 每 10 分钟抓取一次 (GitHub Actions 最小建议间隔)
+    - cron: "*/10 * * * *"
+  # 支持手动触发 (Dashboard → Actions → Run workflow)
+  workflow_dispatch:
+
+jobs:
+  fetch-and-summarize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Trigger RSS fetch
+        run: |
+          echo "Triggering RSS fetch..."
+          curl -sf -X POST \
+            "${{ secrets.API_BASE_URL }}/api/content/fetch-all" \
+            --max-time 120 \
+            -H "Content-Type: application/json" \
+            || echo "Fetch request failed or timed out"
+
+      - name: Wait for content processing
+        run: sleep 30
+
+      - name: Trigger AI summary generation
+        run: |
+          echo "Triggering AI summary generation..."
+          curl -sf -X POST \
+            "${{ secrets.API_BASE_URL }}/api/content/generate-summaries" \
+            --max-time 120 \
+            -H "Content-Type: application/json" \
+            || echo "Summary request failed or timed out"

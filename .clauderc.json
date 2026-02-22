@@ -1,0 +1,12 @@
+{
+  "build_command": "docker-compose up -d --build",
+  "test_command": "docker-compose exec backend pytest tests/",
+  "ignore_patterns": [
+    "**/__pycache__/**",
+    "**/*.pyc",
+    "postgres_data/**",
+    "redis_data/**",
+    "venv/**",
+    ".git/**"
+  ]
+}

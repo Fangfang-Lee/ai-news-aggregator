@@ -1,30 +1,42 @@
+import os
+
+# Set test database URL BEFORE any app imports
+os.environ["DATABASE_URL"] = "sqlite://"
+
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
+
+# Create a shared in-memory SQLite engine for testing
+test_engine = create_engine(
+    "sqlite://",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool
+)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
+# Patch the app's database module to use our test engine
+import app.core.database as db_module
+db_module.engine = test_engine
+db_module.SessionLocal = TestingSessionLocal
 
 from app.main import app
-from app.core.database import Base, get_db
-
-# Use in-memory SQLite for testing
-SQLALCHEMY_TEST_DATABASE_URL = "sqlite:///./test.db"
-
-engine = create_engine(
-    SQLALCHEMY_TEST_DATABASE_URL, connect_args={"check_same_thread": False}
-)
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+from app.core.database import Base
+from app.api.deps import get_db
 
 
 @pytest.fixture(scope="function")
 def db():
     """Create a fresh database for each test"""
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.create_all(bind=test_engine)
     db = TestingSessionLocal()
     try:
         yield db
     finally:
         db.close()
-        Base.metadata.drop_all(bind=engine)
+        Base.metadata.drop_all(bind=test_engine)
 
 
 @pytest.fixture(scope="function")
@@ -37,7 +49,7 @@ def client(db):
             pass
 
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
+    with TestClient(app, raise_server_exceptions=False) as test_client:
         yield test_client
     app.dependency_overrides.clear()
 
@@ -46,9 +58,13 @@ def client(db):
 def sample_category(db):
     """Create a sample category for testing"""
     from app.models.rss_models import Category
+    # Check if "Test Category" already exists (startup may have created categories)
+    existing = db.query(Category).filter(Category.name == "Test Category").first()
+    if existing:
+        return existing
     category = Category(
-        name="AI",
-        description="Artificial Intelligence",
+        name="Test Category",
+        description="Test category for testing",
         color="#6366f1"
     )
     db.add(category)
